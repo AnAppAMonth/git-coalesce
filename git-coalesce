@@ -229,7 +229,7 @@ if __name__ == "__main__":
 
         # Each part is an mX extracted from the message of a commit X. Each part
         # is an array containing paragraphs in that part.
-        parts = []
+        parts = [['']]
         in_comment_block = False
         symbol_found = False
         for ln in lines:
