@@ -95,8 +95,9 @@ if __name__ == "__main__":
         # Open the sequence file used by git-rebase(1)
         target = open(remaining[1], 'r+')
         lines = target.read().splitlines()
-        target.seek(0)
 
+        # Stores the result to be written to the sequence file
+        result = []
         # Stores whether the previous commit is a milestone
         prev_is_milestone = True
         for ln in lines:
@@ -107,7 +108,13 @@ if __name__ == "__main__":
             mo = symbol1.match(items[2])
             if mo:
                 # This is a milestone
-                if not prev_is_milestone:
+                if prev_is_milestone:
+                    # The previous commit is a milestone, and this commit is
+                    # also a milestone. We need to change the action of this
+                    # commit to 'reword', because it doesn't have any commit
+                    # to 'squash' onto it.
+                    items[0] = 'reword'
+                else:
                     items[0] = 'squash'
                     prev_is_milestone = True
 
@@ -115,24 +122,27 @@ if __name__ == "__main__":
                     items[2] = items[2][mo.end(0):]
 
             elif prev_is_milestone:
-                # The action should remain 'pick'
+                # The action should remain 'pick', except for a special case,
+                # which we will handle at the end.
                 prev_is_milestone = False
             else:
                 items[0] = 'squash'
 
-            target.write(' '.join(items) + '\n')
+            result.append(items)
 
             # Add this commit's info to the com_info array if list_opt is True
             if list_opt:
-                items[2] = items[2].strip()
-                if len(items[2]) >= min_len:
-                    com_info.append([0, items[1], items[2]])
+                sha1 = items[1]
+                summary = items[2].strip()
+
+                if len(summary) >= min_len:
+                    com_info.append([0, sha1, summary])
                     prev_is_short = False
                 else:
                     if prev_is_short:
-                        com_info[-1][2] = items[1]
+                        com_info[-1][2] = sha1
                     else:
-                        com_info.append([1, items[1], items[1]])
+                        com_info.append([1, sha1, sha1])
                         prev_is_short = True
 
                 if prev_is_milestone:
@@ -145,6 +155,16 @@ if __name__ == "__main__":
             ec = items[1]
             num += 1
 
+        # Special case: if the last commit in the sequence is a 'pick', it should
+        # be changed to 'reword', because it doesn't have any commit to 'squash'
+        # onto it.
+        if result[-1][0] == 'pick':
+            result[-1][0] = 'reword'
+
+        # Write to the sequence file
+        target.seek(0)
+        for items in result:
+            target.write(' '.join(items) + '\n')
         target.truncate()
         target.close()
 
@@ -257,12 +277,32 @@ if __name__ == "__main__":
             target.seek(0)
             target.write('\n'.join(result))
             target.truncate()
+        else:
+            # Although we keep the original commit message in this case, we
+            # still need to remove special symbols like "```".
+            target.seek(0)
+            for ln in lines:
+                if ln[:1] != '#':
+                    if ln != '':
+                        ln = symbol1.sub('', ln, 1)
+                        ln = symbol2.sub('', ln, 1)
+                    target.write(ln + '\n')
+            target.truncate()
 
         if list_opt:
-            # Write the list of squashed commits to the end of the message.
-            target.write('\nSquashed Commits:\n  ')
-            target.write('\n  '.join(squashes[progress]))
-            target.write('\n')
+            # Write the list of squashed commits to the end of the message, but
+            # only when there are more than one commit.
+            entries = squashes[progress]
+            single_commit = False
+            if len(entries) == 1:
+                commit_range_pat = re.compile(r'^\w+[.][.]\w+$')
+                if not commit_range_pat.match(entries[0]):
+                    single_commit = True
+
+            if not single_commit:
+                target.write('\nSquashed Commits:\n  ')
+                target.write('\n  '.join(entries))
+                target.write('\n')
 
         target.close()
 
