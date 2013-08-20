@@ -19,10 +19,10 @@ if __name__ == "__main__":
     usage = 'git coalesce [options] [--exec <cmd>] [--onto <newbase>] [<upstream>] [<branch>]'
     description = """\
     This command is a wrapper over git-rebase(1) that automatically
-    controls the rebase operation and processes the special symbols
-    it supports, without human intervention. You can pass it the
-    same options you would pass to git-rebase(1), except "-i", which
-    is already used.
+    controls the interactive rebase operation and processes the
+    special symbols it supports, without human intervention. You can
+    pass it the same options you would pass to git-rebase(1), except
+    "-i", which is already used.
 
     Note that if the rebase process is interrupted, you should use
     "git coalesce --continue" instead of "git rebase --continue"
@@ -33,9 +33,9 @@ if __name__ == "__main__":
 
     1. At least 3 consecutive backticks (`) at the beginning of the
        first line of the commit message. This commit is considered a
-       milestone and is combined with all previous commits up to the
-       last milestone to form a single commit. The last commit in the
-       sequence is always considered a milestone no matter what.
+       milestone and is combined with all previous commits up until
+       the last milestone to form a single commit. The last commit in
+       the sequence is always considered a milestone no matter what.
 
     2. At least 3 consecutive tildes (~) at the beginning of a line
        in the commit message. Everything after this is used as part
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     list_help = "list all squashed commits at the end of the combined commit's message. " + \
                 "For commits with summaries shorter than NUM chars, only include commit ID; " + \
-                "otherwise include both ID and summary."
+                "otherwise include both ID and summary"
     parser.add_argument('-l', '--list', nargs='?', const=15, default=None, type=int, metavar='NUM=15', help=list_help)
     parser.add_argument('-v', '--version', action='version', version="%(prog)s version " + VERSION)
     ns, remaining = parser.parse_known_args()
