@@ -2,8 +2,12 @@
 
 VERSION = '0.0.1'
 
+import re
 import subprocess
 import argparse
+
+symbol1 = re.compile(r'^\s*```')
+symbol2 = re.compile(r'^\s*~~~')
 
 if __name__ == "__main__":
     usage = 'git coalesce [options] [--exec <cmd>] [--onto <newbase>] [<upstream>] [<branch>]'
@@ -21,28 +25,126 @@ if __name__ == "__main__":
 
     Supported Symbols
 
-    1. At least 3 consecutive backticks at the beginning of the first
-       line of the commit message. This commit would be considered a
-       milestone and be combined with all previous commits up to the
-       last milestone to form a single commit.
-    2. At least 3 consecutive backticks at the beginning of a line
-       other than the first in a milestone commit. Everything after
-       this would be used as the commit message of the new combined
-       commit. If this symbol is not found in the milestone commit,
-       the default commit message which concatenates the commit
-       messages of all "member" commits is used.
+    1. At least 3 consecutive backticks (`) at the beginning of the
+       first line of the commit message. This commit is considered a
+       milestone and is combined with all previous commits up to the
+       last milestone to form a single commit. The last commit in the
+       sequence is always considered a milestone no matter what.
+
+    2. At least 3 consecutive tildes (~) at the beginning of a line
+       in the commit message. Everything after this is used as part
+       of the message of the new combined commit to which this commit
+       belongs.
+
+       Say commits c1, c2, ..., cN are combined, and each has a block
+       of text m1, m2, ..., mN in their commit messages after this
+       symbol, respectively. The message of the combined commit is
+       formed by aggregating m1 ~ mN in the following order: the
+       first paragraph of mN, m1, m2, ..., m(N-1), the rest of mN.
+
+       Of course, not all commits need to contain this symbol. In
+       most cases you only need to include the message for the
+       combined commit in the message of cN.
+
+       If, however, none of c1 ~ cN contains this symbol, the default
+       commit message which concatenates the messages of all "member"
+       commits is used.
 """
     parser = argparse.ArgumentParser(usage=usage, description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-v', '--version', action='version', version="%(prog)s version " + VERSION)
     ns, remaining = parser.parse_known_args()
 
-    if '--seqedit' in remaining:
+    if len(remaining) and remaining[0] == '--seqedit':
         # We should behave as the sequence editor.
-        print remaining
-    elif '--comedit' in remaining:
+        target = open(remaining[1], 'r+')
+        lines = target.read().splitlines()
+        target.seek(0)
+
+        # Stores whether the previous commit is a milestone
+        prev_is_milestone = True
+        for ln in lines:
+            if ln[:1] in ['', '#']:
+                break
+
+            items = ln.split(' ', 2)
+            if symbol1.match(items[2]):
+                # This is a milestone
+                if not prev_is_milestone:
+                    items[0] = 'squash'
+                    prev_is_milestone = True
+            elif prev_is_milestone:
+                # The action should remain 'pick'
+                prev_is_milestone = False
+            else:
+                items[0] = 'squash'
+
+            target.write(' '.join(items) + '\n')
+
+        target.truncate()
+        target.close()
+
+    elif len(remaining) and remaining[0] == '--comedit':
         # We should behave as the commit message editor.
-        print remaining
+        target = open(remaining[1], 'r+')
+        lines = target.read().splitlines()
+
+        # Each commit message block obviously can't contain a comment line, so
+        # we can use comment lines as separators of commits.
+
+        # Each part is an mX extracted from the message of a commit X. Each part
+        # is an array containing paragraphs in that part.
+        parts = []
+        in_comment_block = False
+        symbol_found = False
+        for ln in lines:
+            if ln[:1] == '#':
+                # We are in a comment block
+                if not in_comment_block:
+                    parts.append([''])
+                    symbol_found = False
+                    in_comment_block = True
+                continue
+
+            in_comment_block = False
+            ln = ln.strip()
+
+            if symbol_found:
+                # Add this line to parts[-1]
+                if ln == '':
+                    if parts[-1][-1] != '':
+                        # New paragraph
+                        parts[-1].append('')
+                else:
+                    # Add to the existing paragraph
+                    parts[-1][-1] += ln + '\n'
+            else:
+                mo = symbol2.match(ln)
+                if mo:
+                    rest = ln[mo.end(0):].strip()
+                    if rest != '':
+                        parts[-1][-1] += rest + '\n'
+                    symbol_found = True
+
+        # The last entry in parts should be discarded.
+        parts.pop(-1)
+
+        # Now construct the commit message for the combined commit.
+        result = []
+        if parts[-1][0] != '':
+            result.append(parts[-1].pop(0))
+        for i in range(len(parts)):
+            for j in range(len(parts[i])):
+                if parts[i][j] != '':
+                    result.append(parts[i][j])
+
+        if len(result) > 0:
+            target.seek(0)
+            target.write('\n'.join(result))
+            target.truncate()
+
+        target.close()
+
     else:
         # We should call git-rebase(1) using this script as both the sequence
         # editor and the commit message editor.
