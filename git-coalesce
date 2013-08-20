@@ -5,9 +5,15 @@ VERSION = '0.0.1'
 import re
 import subprocess
 import argparse
+from time import time
+from tempfile import gettempdir
+import os
+from os import path
 
-symbol1 = re.compile(r'^\s*```')
-symbol2 = re.compile(r'^\s*~~~')
+symbol1 = re.compile(r'^\s*`{3,}')
+symbol2 = re.compile(r'^\s*~{3,}')
+
+tmpdir = gettempdir()
 
 if __name__ == "__main__":
     usage = 'git coalesce [options] [--exec <cmd>] [--onto <newbase>] [<upstream>] [<branch>]'
@@ -52,11 +58,41 @@ if __name__ == "__main__":
 """
     parser = argparse.ArgumentParser(usage=usage, description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+
+    list_help = "list all squashed commits at the end of the combined commit's message. " + \
+                "For commits with summaries shorter than NUM chars, only include commit ID; " + \
+                "otherwise include both ID and summary."
+    parser.add_argument('-l', '--list', nargs='?', const=15, default=None, type=int, metavar='[NUM=15]', help=list_help)
     parser.add_argument('-v', '--version', action='version', version="%(prog)s version " + VERSION)
     ns, remaining = parser.parse_known_args()
 
-    if len(remaining) and remaining[0] == '--seqedit':
+    if len(remaining) and remaining[0][:10] == '--seqedit-':
         # We should behave as the sequence editor.
+
+        # First read the value of the list option from the temp file
+        rand = remaining[0][10:]
+        tmpfn = path.join(tmpdir, 'tmp-' + rand)
+        tmpfile = open(tmpfn, 'r+')
+        list_opt = tmpfile.read().strip()
+        if list_opt != 'None':
+            min_len = int(list_opt)
+            list_opt = True
+            # Each entry in com_info is a 3-element array:
+            #   - for commits with "long" summaries: [0, ID, summary]
+            #   - for commits with "short" summaries: [1, startID, endID]
+            # But there is a special entry 0, marking combined commit boundaries.
+            com_info = []
+            # Whether the previous commit has "short" summary
+            prev_is_short = False
+        else:
+            list_opt = False
+
+        # Records the starting and ending commit ID and number of commits
+        sc = None
+        ec = None
+        num = 0
+
+        # Open the sequence file used by git-rebase(1)
         target = open(remaining[1], 'r+')
         lines = target.read().splitlines()
         target.seek(0)
@@ -68,11 +104,16 @@ if __name__ == "__main__":
                 break
 
             items = ln.split(' ', 2)
-            if symbol1.match(items[2]):
+            mo = symbol1.match(items[2])
+            if mo:
                 # This is a milestone
                 if not prev_is_milestone:
                     items[0] = 'squash'
                     prev_is_milestone = True
+
+                if list_opt:
+                    items[2] = items[2][mo.end(0):]
+
             elif prev_is_milestone:
                 # The action should remain 'pick'
                 prev_is_milestone = False
@@ -81,11 +122,85 @@ if __name__ == "__main__":
 
             target.write(' '.join(items) + '\n')
 
+            # Add this commit's info to the com_info array if list_opt is True
+            if list_opt:
+                items[2] = items[2].strip()
+                if len(items[2]) >= min_len:
+                    com_info.append([0, items[1], items[2]])
+                    prev_is_short = False
+                else:
+                    if prev_is_short:
+                        com_info[-1][2] = items[1]
+                    else:
+                        com_info.append([1, items[1], items[1]])
+                        prev_is_short = True
+
+                if prev_is_milestone:
+                    # Insert a boundary after each milestone
+                    com_info.append(0)
+                    prev_is_short = False
+
+            if sc == None:
+                sc = items[1]
+            ec = items[1]
+            num += 1
+
         target.truncate()
         target.close()
 
-    elif len(remaining) and remaining[0] == '--comedit':
+        # Update the temp file
+
+        # First write the starting commit ID, ending commit ID and the number of
+        # commits between them to the second line of the temp file.
+        tmpfile.write('%s %s %s\n' % (sc, ec, num))
+
+        # Then write the commit info if list_opt is True
+        if list_opt:
+            for com in com_info:
+                if com == 0:
+                    # Special entry marking combined commit boundaries
+                    tmpfile.write('\n')
+                elif com[0] == 0:
+                    tmpfile.write('%s %s\n' % (com[1], com[2]))
+                elif com[1] == com[2]:
+                    tmpfile.write('%s\n' % com[1])
+                else:
+                    tmpfile.write('%s..%s\n' % (com[1], com[2]))
+
+        tmpfile.close()
+
+    elif len(remaining) and remaining[0][:10] == '--comedit-':
         # We should behave as the commit message editor.
+
+        # First read the value of the list option and (if present) the commit
+        # info lines.
+        rand = remaining[0][10:]
+        tmpfn = path.join(tmpdir, 'tmp-' + rand)
+        tmpfile = open(tmpfn, 'r+')
+        lines = tmpfile.read().splitlines()
+        list_opt = lines[0].strip() != 'None'
+
+        # Read and parse lines starting from line 3
+
+        # progress indicates which combined commit we are currently processing,
+        # or which time it is that we are called as a commit message editor,
+        # starting at 0.
+        progress = 0
+        # Each entry in squashes is an array containing the "member" commits of
+        # a combined commit.
+        squashes = [[]]
+        for ln in lines[2:]:
+            ln = ln.strip()
+            if ln == '':
+                # We are at a combined commit boundary
+                squashes.append([])
+            elif ln[0] == '*':
+                # We have reached the final "progress indicator" line
+                progress = len(ln)
+                break
+            else:
+                squashes[-1].append(ln)
+
         target = open(remaining[1], 'r+')
         lines = target.read().splitlines()
 
@@ -133,21 +248,58 @@ if __name__ == "__main__":
         result = []
         if parts[-1][0] != '':
             result.append(parts[-1].pop(0))
-        for i in range(len(parts)):
-            for j in range(len(parts[i])):
-                if parts[i][j] != '':
-                    result.append(parts[i][j])
+        for part in parts:
+            for paragraph in part:
+                if paragraph != '':
+                    result.append(paragraph)
 
         if len(result) > 0:
             target.seek(0)
             target.write('\n'.join(result))
             target.truncate()
 
+        if list_opt:
+            # Write the list of squashed commits to the end of the message.
+            target.write('\nSquashed Commits:\n  ')
+            target.write('\n  '.join(squashes[progress]))
+            target.write('\n')
+
         target.close()
+
+        # Write a '*' to the end of the temp file to indicate progress
+        tmpfile.write('*')
+        tmpfile.close()
 
     else:
         # We should call git-rebase(1) using this script as both the sequence
         # editor and the commit message editor.
-        env_str = 'GIT_SEQUENCE_EDITOR="%s --seqedit" GIT_EDITOR="%s --comedit"' % (__file__, __file__)
+
+        rand = ("%.6f" % time())[-6:]
+        tmpfn = path.join(tmpdir, 'tmp-' + rand)
+        while path.exists(tmpfn):
+            rand = ("%.6f" % time())[-6:]
+            tmpfn = path.join(tmpdir, 'tmp-' + rand)
+
+        tmpfile = open(tmpfn, 'w')
+        tmpfile.write('%s\n' % ns.list)
+        tmpfile.close()
+
+        env_str = 'GIT_SEQUENCE_EDITOR="%s --seqedit-%s" GIT_EDITOR="%s --comedit-%s"' % (__file__, rand, __file__, rand)
         cmd_str = '%s git rebase -i %s' % (env_str, ' '.join(remaining))
         subprocess.check_output(cmd_str, shell=True)
+
+        # Read the starting commit ID, ending commit ID and the number of commits
+        # between them before rebasing from the second line in the temp file.
+        # Read the number of commits after rebasing from the last line (the progress
+        # indicator line) in the temp file.
+        tmpfile = open(tmpfn, 'r')
+        lines = tmpfile.read().splitlines()
+        ln = lines[1]
+        (sc, ec, num) = ln.strip().split(' ')
+        ln = lines[-1]
+        num2 = len(ln.strip())
+        print 'Squashed %s commits (%s..%s) into %s.' % (num, sc, ec, num2)
+        tmpfile.close()
+
+        # Finally delete the temp file
+        os.remove(tmpfn)
