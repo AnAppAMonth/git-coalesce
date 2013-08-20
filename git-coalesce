@@ -62,7 +62,7 @@ if __name__ == "__main__":
     list_help = "list all squashed commits at the end of the combined commit's message. " + \
                 "For commits with summaries shorter than NUM chars, only include commit ID; " + \
                 "otherwise include both ID and summary."
-    parser.add_argument('-l', '--list', nargs='?', const=15, default=None, type=int, metavar='[NUM=15]', help=list_help)
+    parser.add_argument('-l', '--list', nargs='?', const=15, default=None, type=int, metavar='NUM=15', help=list_help)
     parser.add_argument('-v', '--version', action='version', version="%(prog)s version " + VERSION)
     ns, remaining = parser.parse_known_args()
 
