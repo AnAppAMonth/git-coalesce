@@ -1,0 +1,51 @@
+#!/usr/bin/env python
+
+VERSION = '0.0.1'
+
+import subprocess
+import argparse
+
+if __name__ == "__main__":
+    usage = 'git coalesce [options] [--exec <cmd>] [--onto <newbase>] [<upstream>] [<branch>]'
+    description = """\
+    This command is a wrapper over git-rebase(1) that automatically
+    controls the rebase operation and processes the special symbols
+    it supports, without human intervention. You can pass it the
+    same options you would pass to git-rebase(1), except "-i", which
+    is already used.
+
+    Note that if the rebase process is interrupted, you should use
+    "git coalesce --continue" instead of "git rebase --continue"
+    after resolving the issue. Just replace "rebase" with "coalesce"
+    in the entire process.
+
+    Supported Symbols
+
+    1. At least 3 consecutive backticks at the beginning of the first
+       line of the commit message. This commit would be considered a
+       milestone and be combined with all previous commits up to the
+       last milestone to form a single commit.
+    2. At least 3 consecutive backticks at the beginning of a line
+       other than the first in a milestone commit. Everything after
+       this would be used as the commit message of the new combined
+       commit. If this symbol is not found in the milestone commit,
+       the default commit message which concatenates the commit
+       messages of all "member" commits is used.
+"""
+    parser = argparse.ArgumentParser(usage=usage, description=description,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('-v', '--version', action='version', version="%(prog)s version " + VERSION)
+    ns, remaining = parser.parse_known_args()
+
+    if '--seqedit' in remaining:
+        # We should behave as the sequence editor.
+        print remaining
+    elif '--comedit' in remaining:
+        # We should behave as the commit message editor.
+        print remaining
+    else:
+        # We should call git-rebase(1) using this script as both the sequence
+        # editor and the commit message editor.
+        env_str = 'GIT_SEQUENCE_EDITOR="%s --seqedit" GIT_EDITOR="%s --comedit"' % (__file__, __file__)
+        cmd_str = '%s git rebase -i %s' % (env_str, ' '.join(remaining))
+        subprocess.check_output(cmd_str, shell=True)
