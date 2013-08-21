@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-VERSION = '0.1.0'
+VERSION = '0.1.1'
 
 import sys
 import re
@@ -102,11 +102,22 @@ if __name__ == "__main__":
         # Stores whether the previous commit is a milestone
         prev_is_milestone = True
         for ln in lines:
+            ln = ln.strip()
+
             if ln[:1] in ['', '#']:
                 break
 
             items = ln.split(' ', 2)
-            mo = symbol1.match(items[2])
+            try:
+                mo = symbol1.match(items[2])
+            except IndexError:
+                target.close()
+                tmpfile.close()
+                if ln == 'noop':
+                    exit(0)
+                else:
+                    exit(1)
+
             if mo:
                 # This is a milestone
                 if prev_is_milestone:
@@ -356,11 +367,15 @@ if __name__ == "__main__":
         # indicator line) in the temp file.
         tmpfile = open(tmpfn, 'r')
         lines = tmpfile.read().splitlines()
-        ln = lines[1]
-        (sc, ec, num) = ln.strip().split(' ')
-        ln = lines[-1]
-        num2 = len(ln.strip())
-        print 'Squashed %s commits (%s..%s) into %s.' % (num, sc, ec, num2)
+        try:
+            ln = lines[1]
+        except IndexError:
+            print 'Noop rebase completed.'
+        else:
+            (sc, ec, num) = ln.strip().split(' ')
+            ln = lines[-1]
+            num2 = len(ln.strip())
+            print 'Squashed %s commits (%s..%s) into %s.' % (num, sc, ec, num2)
         tmpfile.close()
 
         # Finally delete the temp file
