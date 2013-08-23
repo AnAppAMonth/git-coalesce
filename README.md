@@ -94,28 +94,37 @@ usage: git coalesce [options] [--exec <cmd>] [--onto <newbase>] [<upstream>] [<b
 
     Supported Symbols
 
-    1. At least 3 consecutive backticks (`) at the beginning of the
-       first line of the commit message. This commit is considered a
+    1. One or more opening braces ({) at the beginning of the first
+       line (summary) of the commit message, and zero or more closing
+       braces (}) at the end of the line. This commit is considered a
        milestone and is combined with all previous commits up until
        the last milestone to form a single commit. The last commit in
        the sequence is always considered a milestone no matter what.
 
-    2. At least 3 consecutive tildes (~) at the beginning of a line
-       in the commit message. Everything after this is used as part
-       of the message of the new combined commit to which this commit
-       belongs.
+    2. One or more opening braces ({) followed by an exclamation mark
+       (!) at the beginning of a line in the commit message. This
+       symbol starts a block.
+
+       An exclamation mark (!) followed by one or more closing braces
+       (}) at the end of a line in the commit message. This symbol
+       ends a block.
+
+       Everything in such a block is used as part of the message of
+       the new combined commit to which this commit belongs.
 
        Say commits c1, c2, ..., cN are combined, and each has a block
-       of text m1, m2, ..., mN in their commit messages after this
-       symbol, respectively. The message of the combined commit is
-       formed by aggregating m1 ~ mN in the following order: the
-       first paragraph of mN, m1, m2, ..., m(N-1), the rest of mN.
+       of text m1, m2, ..., mN in their commit messages between these
+       symbols, respectively (multiple such blocks in a commit message
+       are concatenated to form a single block). The message of the
+       combined commit is formed by aggregating m1 ~ mN in the following
+       order: the first paragraph of mN, m1, m2, ..., m(N-1), the rest
+       of mN.
 
-       Of course, not all commits need to contain this symbol. In
+       Of course, not all commits need to contain these symbols. In
        most cases you only need to include the message for the
        combined commit in the message of cN.
 
-       If, however, none of c1 ~ cN contains this symbol, the default
+       If, however, none of c1 ~ cN contains these symbols, the default
        commit message which concatenates the messages of all "member"
        commits is used.
 

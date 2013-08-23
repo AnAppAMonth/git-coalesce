@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-VERSION = '0.1.1'
+VERSION = '0.2.0'
 
 import sys
 import re
@@ -11,8 +11,9 @@ from tempfile import gettempdir
 import os
 from os import path
 
-symbol1 = re.compile(r'^\s*`{3,}')
-symbol2 = re.compile(r'^\s*~{3,}')
+symbol1 = re.compile(r'^\s*[{]+(.*?)[}]*\s*$')
+symbol2 = re.compile(r'^\s*[{]+!')
+symbol3 = re.compile(r'![}]+\s*$')
 
 tmpdir = gettempdir()
 
@@ -32,28 +33,37 @@ if __name__ == "__main__":
 
     Supported Symbols
 
-    1. At least 3 consecutive backticks (`) at the beginning of the
-       first line of the commit message. This commit is considered a
+    1. One or more opening braces ({) at the beginning of the first
+       line (summary) of the commit message, and zero or more closing
+       braces (}) at the end of the line. This commit is considered a
        milestone and is combined with all previous commits up until
        the last milestone to form a single commit. The last commit in
        the sequence is always considered a milestone no matter what.
 
-    2. At least 3 consecutive tildes (~) at the beginning of a line
-       in the commit message. Everything after this is used as part
-       of the message of the new combined commit to which this commit
-       belongs.
+    2. One or more opening braces ({) followed by an exclamation mark
+       (!) at the beginning of a line in the commit message. This
+       symbol starts a block.
+
+       An exclamation mark (!) followed by one or more closing braces
+       (}) at the end of a line in the commit message. This symbol
+       ends a block.
+
+       Everything in such a block is used as part of the message of
+       the new combined commit to which this commit belongs.
 
        Say commits c1, c2, ..., cN are combined, and each has a block
-       of text m1, m2, ..., mN in their commit messages after this
-       symbol, respectively. The message of the combined commit is
-       formed by aggregating m1 ~ mN in the following order: the
-       first paragraph of mN, m1, m2, ..., m(N-1), the rest of mN.
+       of text m1, m2, ..., mN in their commit messages between these
+       symbols, respectively (multiple such blocks in a commit message
+       are concatenated to form a single block). The message of the
+       combined commit is formed by aggregating m1 ~ mN in the following
+       order: the first paragraph of mN, m1, m2, ..., m(N-1), the rest
+       of mN.
 
-       Of course, not all commits need to contain this symbol. In
+       Of course, not all commits need to contain these symbols. In
        most cases you only need to include the message for the
        combined commit in the message of cN.
 
-       If, however, none of c1 ~ cN contains this symbol, the default
+       If, however, none of c1 ~ cN contains these symbols, the default
        commit message which concatenates the messages of all "member"
        commits is used.
 """
@@ -131,7 +141,7 @@ if __name__ == "__main__":
                     prev_is_milestone = True
 
                 if list_opt:
-                    items[2] = items[2][mo.end(0):]
+                    items[2] = mo.group(1)
 
             elif prev_is_milestone:
                 # The action should remain 'pick', except for a special case,
@@ -257,6 +267,14 @@ if __name__ == "__main__":
             ln = ln.strip()
 
             if symbol_found:
+                mo = symbol3.search(ln)
+                if mo:
+                    ln = ln[:mo.start(0)].strip()
+                    if ln != '':
+                        parts[-1][-1] += ln + '\n'
+                        ln = ''
+                    symbol_found = False
+
                 # Add this line to parts[-1]
                 if ln == '':
                     if parts[-1][-1] != '':
@@ -269,9 +287,22 @@ if __name__ == "__main__":
                 mo = symbol2.match(ln)
                 if mo:
                     rest = ln[mo.end(0):].strip()
+                    mo2 = None
+                    if rest != '':
+                        # See if the ending symbol is in the same line
+                        mo2 = symbol3.search(rest)
+                        if mo2:
+                            rest = rest[:mo2.start(0)].strip()
+
                     if rest != '':
                         parts[-1][-1] += rest + '\n'
-                    symbol_found = True
+
+                    if mo2:
+                        if parts[-1][-1] != '':
+                            # New paragraph
+                            parts[-1].append('')
+                    else:
+                        symbol_found = True
 
         # The last entry in parts should be discarded.
         parts.pop(-1)
@@ -291,13 +322,14 @@ if __name__ == "__main__":
             target.truncate()
         else:
             # Although we keep the original commit message in this case, we
-            # still need to remove special symbols like "```".
+            # still need to remove the special symbols.
             target.seek(0)
             for ln in lines:
                 if ln[:1] != '#':
                     if ln != '':
-                        ln = symbol1.sub('', ln, 1)
                         ln = symbol2.sub('', ln, 1)
+                        ln = symbol3.sub('', ln, 1)
+                        ln = symbol1.sub(r'\1', ln, 1)
                     target.write(ln + '\n')
             target.truncate()
 
