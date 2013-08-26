@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-VERSION = '0.2.0'
+VERSION = '0.2.1'
 
 import sys
 import re
@@ -359,8 +359,13 @@ if __name__ == "__main__":
         # We should call git-rebase(1) using this script as both the sequence
         # editor and the commit message editor.
 
-        # First generate the name of the temp file from the SHA1 hash of the
-        # Git repo's root path.
+        # We don't support `--edit-todo`
+        if '--edit-todo' in remaining:
+            print "Error: this command handles the todo list automatically, you shouldn't interfere with it using the --edit-todo option"
+            exit(1)
+
+        # Generate the name of the temp file from the SHA1 hash of the Git
+        # repo's root path.
         # This way we can still locate the file if the rebase is interrupted
         # and resumed later. On the other hand, there shouldn't be conflicts
         # as you can't have two simultaneous rebase operations in the same
@@ -369,9 +374,15 @@ if __name__ == "__main__":
         rand = hashlib.sha1(root_path).hexdigest()[:6]
         tmpfn = path.join(tmpdir, 'tmp-' + rand)
 
-        tmpfile = open(tmpfn, 'w')
-        tmpfile.write('%s\n' % ns.list)
-        tmpfile.close()
+        if '--continue' in remaining or '--skip' in remaining or '--abort' in remaining:
+            # This is the continuation of a previously started rebase process, we
+            # should reuse the previous temp file.
+            pass
+        else:
+            # Create a new temp file and store in it the value of the `--list` option.
+            tmpfile = open(tmpfn, 'w')
+            tmpfile.write('%s\n' % ns.list)
+            tmpfile.close()
 
         env_str = 'GIT_SEQUENCE_EDITOR="%s --seqedit-%s" GIT_EDITOR="%s --comedit-%s"' % (__file__, rand, __file__, rand)
         cmd_str = '%s git rebase -i %s' % (env_str, ' '.join(remaining))
