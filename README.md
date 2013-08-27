@@ -124,9 +124,8 @@ usage: git coalesce [options] [--exec <cmd>] [--onto <newbase>] [<upstream>] [<b
        most cases you only need to include the message for the
        combined commit in the message of cN.
 
-       If, however, none of c1 ~ cN contains these symbols, the default
-       commit message which concatenates the messages of all "member"
-       commits is used.
+       If, however, none of c1 ~ cN contains these symbols, the message
+       of the milestone commit is used.
 
 optional arguments:
   -h, --help            show this help message and exit

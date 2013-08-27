@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-VERSION = '0.2.1'
+VERSION = '0.2.2'
 
 import sys
 import re
@@ -64,9 +64,8 @@ if __name__ == "__main__":
        most cases you only need to include the message for the
        combined commit in the message of cN.
 
-       If, however, none of c1 ~ cN contains these symbols, the default
-       commit message which concatenates the messages of all "member"
-       commits is used.
+       If, however, none of c1 ~ cN contains these symbols, the message
+       of the milestone commit is used.
 """
     parser = argparse.ArgumentParser(usage=usage, description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -322,16 +321,32 @@ if __name__ == "__main__":
             target.write('\n'.join(result))
             target.truncate()
         else:
-            # Although we keep the original commit message in this case, we
-            # still need to remove the special symbols.
+            # Use the original commit message of the milestone commit in this
+            # case. We also need to remove the special symbols.
             target.seek(0)
+
+            commits = len(parts)
+            ct = 1
+            in_comment_block = False
             for ln in lines:
-                if ln[:1] != '#':
+                if ln[:1] == '#':
+                    # We are in a comment block
+                    if not in_comment_block:
+                        ct += 1
+                        in_comment_block = True
+                    continue
+
+                in_comment_block = False
+
+                if ct == commits:
+                    # We are in the section of the milestone commit.
+                    ln = ln.rstrip()
                     if ln != '':
                         ln = symbol2.sub('', ln, 1)
                         ln = symbol3.sub('', ln, 1)
                         ln = symbol1.sub(r'\1', ln, 1)
                     target.write(ln + '\n')
+
             target.truncate()
 
         if list_opt:
