@@ -265,12 +265,12 @@ if __name__ == "__main__":
                 continue
 
             in_comment_block = False
-            ln = ln.strip()
+            ln = ln.rstrip()
 
             if symbol_found:
                 mo = symbol3.search(ln)
                 if mo:
-                    ln = ln[:mo.start(0)].strip()
+                    ln = ln[:mo.start(0)].rstrip()
                     if ln != '':
                         parts[-1][-1] += ln + '\n'
                         ln = ''
@@ -287,13 +287,13 @@ if __name__ == "__main__":
             else:
                 mo = symbol2.match(ln)
                 if mo:
-                    rest = ln[mo.end(0):].strip()
+                    rest = ln[mo.end(0):]
                     mo2 = None
                     if rest != '':
                         # See if the ending symbol is in the same line
                         mo2 = symbol3.search(rest)
                         if mo2:
-                            rest = rest[:mo2.start(0)].strip()
+                            rest = rest[:mo2.start(0)].rstrip()
 
                     if rest != '':
                         parts[-1][-1] += rest + '\n'
